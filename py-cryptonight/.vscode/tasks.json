@@ -1,0 +1,50 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "msbuild-build",
+            "type": "shell",
+            "command": "msbuild",
+            "args": [
+                "/property:GenerateFullPaths=true",
+                "/t:build",
+                "/consoleloggerparameters:NoSummary"
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent"
+            },
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "gcc-build",
+            "type": "shell",
+            "command": "gcc",
+            "args": [
+                "-c",
+                "src/cryptonight/CryptonightR_template.S",
+                "-o",
+                "\"src/cryptonight/CryptonightR_template.obj\""
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": false
+            },
+            "presentation": {
+                "reveal": "always"
+            }
+        },
+        {
+            // Compound task to run both tasks
+            "label": "build-all",
+            "dependsOn": ["msbuild-build", "gcc-build"],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        }
+    ]
+}
