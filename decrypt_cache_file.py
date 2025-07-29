@@ -2,6 +2,7 @@ from Crypto.Cipher import ChaCha20
 import pycryptonight
 from datetime import datetime, timezone
 import argparse
+import csv, os
 
 class ProcessingContext:
     """Handles binary data processing with position tracking"""
@@ -74,9 +75,24 @@ def m_tx(ctx):
     # Step 9-17: vout_count(2) -> [VARINT_FIELD(amount)(0), Vout variant tag(03: txout_to_tagged_key), FIELD(key) - public_key(32), FIELD(view_tag)(1)]
     # Step 18-19: FIELD(extra) - [1, 44]
     skip_pattern = [32,1,1,1,32,1,1,1,32,1,1,44]
+    public_keys = []
+    for idx, n in enumerate(skip_pattern, start=23):
+        if idx == 27 or idx == 31:  # 32바이트 public key 위치 (4,8번째 32바이트)
+            pub_key_bytes = ctx.data[ctx.pos:ctx.pos+32]
+            public_keys.append(pub_key_bytes.hex())
+            ctx.skip(n)
+        else:
+            ctx.skip(n)
+
+    while len(public_keys) < 2:
+        public_keys.append("-")
+
+    return public_keys
+    '''
     for idx, n in enumerate(skip_pattern, start=23):
         ctx.skip(n)
         #print(f"[TX Step {idx}] Skipped {n} bytes, Offset: 0x{ctx.pos:X}")
+    '''
 
 def m_transfers(ctx):
     """Processes transfer records"""
@@ -182,7 +198,10 @@ def m_confirmed_txs(ctx):
         tx_id = ctx.data[ctx.pos:ctx.pos+32].hex()
         ctx.skip(32)    # tx id
         ctx.skip(1)     # VERSION_FIELD(1)
-        m_tx(ctx)
+        
+        public_keys = m_tx(ctx)  # Return value received: 2 public keys list
+        #m_tx(ctx)
+        
         amount_in, _ = ctx.read_varint()    # VARINT_FIELD(m_amount_in)
         amount_out, _ = ctx.read_varint()   # VARINT_FIELD(m_amount_out)
         change, _ = ctx.read_varint()       # VARINT_FIELD(m_change)
@@ -228,7 +247,9 @@ def m_confirmed_txs(ctx):
             'amount': amount,
             'fee': fee,
             'change': change,
-            'destination_address': des_addr_str
+            'destination_address': des_addr_str,
+            'public_key_1': public_keys[0],
+            'public_key_2': public_keys[1],
         })
 
 def process_file(data):
@@ -260,11 +281,10 @@ def process_file(data):
     #print(f"m_confirmed_txs Offset: 0x{ctx.pos:X}")
     
     #print(f"Final Offset: 0x{ctx.pos:X}")
-
-
+    
     print("\n***Transactions Summary***")
-    print("{:<4} {:<19} {:<12} {:<64} {:<64} {:<12} {:<8} {:<12} {:<40}".format(
-        "Type", "Timestamp", "BlockHeight", "TX ID", "TX Key", "Amount", "Fee", "Change", "Destination Address"
+    print("{:<4} {:<19} {:<12} {:<64} {:<64} {:<12} {:<8} {:<12} {:<40} {:<64} {:<64}".format(
+        "Type", "Timestamp", "BlockHeight", "TX ID", "TX Key", "Amount", "Fee", "Change", "Destination Address", "Public Key 1", "Public Key 2"
     ))
     sorted_txs = sorted(ctx.storage['transactions'], key=lambda x: x['timestamp'])
     
@@ -277,7 +297,7 @@ def process_file(data):
                 return f"{int(val) / 1_000_000_000_000:.12f}"
             except:
                 return "-"
-        print("{:<4} {:<19} {:<12} {:<64} {:<64} {:<12} {:<8} {:<12} {:<40}".format(
+        print("{:<4} {:<19} {:<12} {:<64} {:<64} {:<12} {:<8} {:<12} {:<40} {:<64} {:<64}".format(
             tx['type'],
             dt.strftime("%Y-%m-%d %H:%M:%S"),
             tx['block_height'],
@@ -286,9 +306,39 @@ def process_file(data):
             show_xmr(tx['amount']),
             show_xmr(tx['fee']),
             show_xmr(tx['change']),
-            tx['destination_address']
+            tx['destination_address'],
+            tx.get('public_key_1', "-"),
+            tx.get('public_key_2', "-")
         ))
         #print("\n")
+        
+    # Save CSV file to current directory as 'transaction_result.csv'
+    csv_filename = "transaction_result.csv"
+
+    with open(csv_filename, mode='w', newline='', encoding='utf-8') as csvfile:
+        fieldnames = [
+            "Type", "Timestamp", "BlockHeight", "TX ID", "TX Key", "Amount", "Fee", "Change", "Destination Address", "Public Key 1", "Public Key 2"
+        ]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+
+        for tx in sorted_txs:
+            dt = datetime.fromtimestamp(tx['timestamp'], tz=timezone.utc)
+            writer.writerow({
+                "Type": tx['type'],
+                "Timestamp": dt.strftime("%Y-%m-%d %H:%M:%S"),
+                "BlockHeight": tx['block_height'],
+                "TX ID": tx['tx_id'],
+                "TX Key": tx['tx_key'],
+                "Amount": show_xmr(tx['amount']),
+                "Fee": show_xmr(tx['fee']),
+                "Change": show_xmr(tx['change']),
+                "Destination Address": tx['destination_address'],
+                "Public Key 1": tx.get('public_key_1', "-"),
+                "Public Key 2": tx.get('public_key_2', "-"),
+            })
+    
+    print(f"\nTransaction data has been saved to '{csv_filename}' in the current directory.")
 
 def generate_chacha_key(data, size, key, kdf_rounds):
     """
