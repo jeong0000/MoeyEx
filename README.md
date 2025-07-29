@@ -56,7 +56,7 @@ The output data is as:
 # Decrypt wallet cache file
 The wallet cache file encrypts and stores transactions data related to imcoming, outgoing.
 
-(The code can be decrypted for wallets that do not have an unconfirmed transaction and do not use subaddress and multisignature)
+(The code can be decrypted for wallets that do not have an unconfirmed transaction and do not use subaddress, multisignature and unlock_time.)
 
 ## Features
 decrypt_wallet_file.py extracts transactions data from &lt;walletname&gt; file.
